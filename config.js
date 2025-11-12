@@ -1,10 +1,14 @@
 // Configuration and Constants
 
 // Canvas settings
+// Performance presets:
+// HIGH RES: gRez: 2, gWidth: 1144, gHeight: 1600 (~457k cells per CA - SLOW!)
+// MEDIUM:   gRez: 4, gWidth: 800, gHeight: 1000 (~50k cells per CA)
+// FAST:     gRez: 6, gWidth: 600, gHeight: 750 (~15k cells per CA)
 const CONFIG = {
-  gRez: 2,
-  gWidth: 1144,
-  gHeight: 1600,
+  gRez: 4, // Cell size in pixels (higher = fewer cells, faster)
+  gWidth: 800, // Canvas width in pixels
+  gHeight: 1000, // Canvas height in pixels (4:5 ratio)
 };
 
 // Color palettes

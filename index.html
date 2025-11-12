@@ -7,11 +7,459 @@
     <title>Protofield Carpets - Cellular Automaton</title>
   </head>
   <body>
-    <!-- Load modules in dependency order -->
-    <script src="config.js"></script>
-    <script src="utils.js"></script>
-    <script src="cell.js"></script>
-    <script src="cellularAutomaton.js"></script>
+    <!-- Control Panel -->
+    <div id="controlPanel" class="control-panel">
+      <div class="panel-header">
+        <h2>Protofield Controls</h2>
+        <button id="closePanel" class="close-btn">✕</button>
+      </div>
+
+      <div class="panel-content">
+        <!-- Playback Controls -->
+        <div class="control-section">
+          <h3>Global Playback</h3>
+          <div class="button-group button-group-4">
+            <button id="startBtn" class="btn">▶ Start</button>
+            <button id="stopBtn" class="btn">⏸ Pause</button>
+            <button id="resetBtn" class="btn">⟲ Reset</button>
+            <button id="stepBtn" class="btn">⏭ Step</button>
+          </div>
+          <div class="control-group">
+            <label for="stepsPerFrame">Steps per Frame:</label>
+            <input
+              type="number"
+              id="stepsPerFrame"
+              class="number-input"
+              min="1"
+              max="50"
+              value="1"
+            />
+          </div>
+          <div class="control-group">
+            <label for="frameRate">Frame Rate (FPS):</label>
+            <input
+              type="number"
+              id="frameRate"
+              class="number-input"
+              min="1"
+              max="60"
+              value="10"
+            />
+          </div>
+        </div>
+
+        <!-- Global Configuration -->
+        <div class="control-section">
+          <h3>Global Configuration</h3>
+          <div class="control-group">
+            <label for="canvasSize">Canvas Size:</label>
+            <select id="canvasSize" class="select-input">
+              <option value="400x500">400×500</option>
+              <option value="600x750">600×750</option>
+              <option value="800x1000" selected>800×1000</option>
+              <option value="1144x1600">1144×1600</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="cellSize">Cell Size:</label>
+            <select id="cellSize" class="select-input">
+              <option value="1">1px</option>
+              <option value="2">2px</option>
+              <option value="4" selected>4px</option>
+              <option value="8">8px</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Region B0 (Outer Border) -->
+        <div class="control-section">
+          <h3>B0 - Outer Border</h3>
+          <div class="button-group button-group-4">
+            <button id="b0StartBtn" class="btn btn-small">▶ Start</button>
+            <button id="b0StopBtn" class="btn btn-small" disabled>
+              ⏸ Pause
+            </button>
+            <button id="b0StepBtn" class="btn btn-small">⏭ Step</button>
+            <button id="b0ResetBtn" class="btn btn-small">⟲ Reset</button>
+          </div>
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="b0Enabled" checked /> Enabled
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="b0Thickness">Thickness (cells):</label>
+            <input
+              type="number"
+              id="b0Thickness"
+              class="number-input"
+              min="2"
+              max="25"
+              value="10"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b0SeedPoints">Seed Points Per Side:</label>
+            <input
+              type="number"
+              id="b0SeedPoints"
+              class="number-input"
+              min="1"
+              max="20"
+              value="6"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b0Modulus">Modulus:</label>
+            <select id="b0Modulus" class="select-input">
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="7">7</option>
+              <option value="11">11</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b0Kernel">Kernel:</label>
+            <select id="b0Kernel" class="select-input">
+              <option value="point">Point</option>
+              <option value="moore" selected>Moore</option>
+              <option value="vonNeumann">Von Neumann</option>
+              <option value="cross">Cross</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b0Color">Color:</label>
+            <input
+              type="color"
+              id="b0Color"
+              class="color-input"
+              value="#0000FF"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b0MinThreshold">Min Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b0MinThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b0MinThresholdValue" class="value-display">0</span>
+          </div>
+          <div class="control-group">
+            <label for="b0MaxThreshold">Max Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b0MaxThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b0MaxThresholdValue" class="value-display">0</span>
+          </div>
+        </div>
+
+        <!-- Region B1 (Main Border) -->
+        <div class="control-section">
+          <h3>B1 - Main Border</h3>
+          <div class="button-group button-group-4">
+            <button id="b1StartBtn" class="btn btn-small">▶ Start</button>
+            <button id="b1StopBtn" class="btn btn-small" disabled>
+              ⏸ Pause
+            </button>
+            <button id="b1StepBtn" class="btn btn-small">⏭ Step</button>
+            <button id="b1ResetBtn" class="btn btn-small">⟲ Reset</button>
+          </div>
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="b1Enabled" checked /> Enabled
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="b1Thickness">Thickness (cells):</label>
+            <input
+              type="number"
+              id="b1Thickness"
+              class="number-input"
+              min="10"
+              max="75"
+              value="30"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b1SeedPoints">Seed Points Per Side:</label>
+            <input
+              type="number"
+              id="b1SeedPoints"
+              class="number-input"
+              min="1"
+              max="20"
+              value="3"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b1Modulus">Modulus:</label>
+            <select id="b1Modulus" class="select-input">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="7">7</option>
+              <option value="11">11</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b1Kernel">Kernel:</label>
+            <select id="b1Kernel" class="select-input">
+              <option value="point">Point</option>
+              <option value="moore">Moore</option>
+              <option value="vonNeumann">Von Neumann</option>
+              <option value="cross">Cross</option>
+              <option value="custom" selected>Custom</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b1Color">Color:</label>
+            <input
+              type="color"
+              id="b1Color"
+              class="color-input"
+              value="#FF0000"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b1MinThreshold">Min Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b1MinThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b1MinThresholdValue" class="value-display">0</span>
+          </div>
+          <div class="control-group">
+            <label for="b1MaxThreshold">Max Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b1MaxThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b1MaxThresholdValue" class="value-display">0</span>
+          </div>
+        </div>
+
+        <!-- Region B2 (Inner Border) -->
+        <div class="control-section">
+          <h3>B2 - Inner Border</h3>
+          <div class="button-group button-group-4">
+            <button id="b2StartBtn" class="btn btn-small">▶ Start</button>
+            <button id="b2StopBtn" class="btn btn-small" disabled>
+              ⏸ Pause
+            </button>
+            <button id="b2StepBtn" class="btn btn-small">⏭ Step</button>
+            <button id="b2ResetBtn" class="btn btn-small">⟲ Reset</button>
+          </div>
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="b2Enabled" checked /> Enabled
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="b2Thickness">Thickness (cells):</label>
+            <input
+              type="number"
+              id="b2Thickness"
+              class="number-input"
+              min="2"
+              max="25"
+              value="8"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b2SeedPoints">Seed Points Per Side:</label>
+            <input
+              type="number"
+              id="b2SeedPoints"
+              class="number-input"
+              min="1"
+              max="20"
+              value="3"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b2Modulus">Modulus:</label>
+            <select id="b2Modulus" class="select-input">
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="7">7</option>
+              <option value="11">11</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b2Kernel">Kernel:</label>
+            <select id="b2Kernel" class="select-input">
+              <option value="point">Point</option>
+              <option value="moore" selected>Moore</option>
+              <option value="vonNeumann">Von Neumann</option>
+              <option value="cross">Cross</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="b2Color">Color:</label>
+            <input
+              type="color"
+              id="b2Color"
+              class="color-input"
+              value="#00FF00"
+            />
+          </div>
+          <div class="control-group">
+            <label for="b2MinThreshold">Min Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b2MinThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b2MinThresholdValue" class="value-display">0</span>
+          </div>
+          <div class="control-group">
+            <label for="b2MaxThreshold">Max Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="b2MaxThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="b2MaxThresholdValue" class="value-display">0</span>
+          </div>
+        </div>
+
+        <!-- Region F0 (Field) -->
+        <div class="control-section">
+          <h3>F0 - Field</h3>
+          <div class="button-group button-group-4">
+            <button id="f0StartBtn" class="btn btn-small">▶ Start</button>
+            <button id="f0StopBtn" class="btn btn-small" disabled>
+              ⏸ Pause
+            </button>
+            <button id="f0StepBtn" class="btn btn-small">⏭ Step</button>
+            <button id="f0ResetBtn" class="btn btn-small">⟲ Reset</button>
+          </div>
+          <div class="control-group">
+            <label>
+              <input type="checkbox" id="f0Enabled" checked /> Enabled
+            </label>
+          </div>
+          <div class="control-group">
+            <label for="f0SeedPoints">Seed Points:</label>
+            <input
+              type="number"
+              id="f0SeedPoints"
+              class="number-input"
+              min="1"
+              max="3"
+              value="1"
+            />
+          </div>
+          <div class="control-group">
+            <label for="f0Modulus">Modulus:</label>
+            <select id="f0Modulus" class="select-input">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="7">7</option>
+              <option value="11">11</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="f0Kernel">Kernel:</label>
+            <select id="f0Kernel" class="select-input">
+              <option value="point">Point</option>
+              <option value="moore">Moore</option>
+              <option value="vonNeumann">Von Neumann</option>
+              <option value="cross">Cross</option>
+              <option value="custom" selected>Custom</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="f0Color">Color:</label>
+            <input
+              type="color"
+              id="f0Color"
+              class="color-input"
+              value="#000000"
+            />
+          </div>
+          <div class="control-group">
+            <label for="f0MinThreshold">Min Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="f0MinThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="f0MinThresholdValue" class="value-display">0</span>
+          </div>
+          <div class="control-group">
+            <label for="f0MaxThreshold">Max Threshold (0 = off):</label>
+            <input
+              type="range"
+              id="f0MaxThreshold"
+              class="slider"
+              min="0"
+              max="11"
+              value="0"
+              step="1"
+            />
+            <span id="f0MaxThresholdValue" class="value-display">0</span>
+          </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="control-section">
+          <h3>Statistics</h3>
+          <div class="control-group">
+            <label for="iterationsCount">Total Steps:</label>
+            <input
+              type="number"
+              id="iterationsCount"
+              class="number-input"
+              min="0"
+              value="0"
+              readonly
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load modules -->
     <script src="sketch.js"></script>
+    <script src="controls.js"></script>
   </body>
 </html>

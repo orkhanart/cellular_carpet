@@ -1,11 +1,11 @@
-// Cellular Automaton Class
+// Protofield Cellular Automaton Class
 
 /**
- * Cellular Automaton system with configurable rules
+ * Protofield Cellular Automaton system using kernel convolution and modular arithmetic
  */
 class CellularAutomaton {
   /**
-   * Create a cellular automaton
+   * Create a protofield cellular automaton
    * @param {number} rez - Cell resolution
    * @param {number} wid - Width in pixels
    * @param {number} hei - Height in pixels
@@ -15,7 +15,7 @@ class CellularAutomaton {
    * @param {Array} spnY - Spawn Y coordinates
    * @param {Array} cols - Color palette
    * @param {Array} vizs - Visibility pattern
-   * @param {Object} rule - CA rule {birth: [], survive: []}
+   * @param {Object} rule - CA rule (used for kernel selection)
    */
   constructor(rez, wid, hei, bMode, bWid, spnX, spnY, cols, vizs, rule) {
     this.rez = rez;
@@ -26,7 +26,14 @@ class CellularAutomaton {
     this.cl = cols[0];
     this.viz = vizs[0];
 
-    // Cellular automaton grids
+    // Debug: Log grid dimensions
+    console.log(
+      `CA Grid: ${this.cols} × ${this.rows} = ${
+        this.cols * this.rows
+      } cells (${wid}×${hei}px @ ${rez}px/cell)`
+    );
+
+    // Protofield grids - store modular values (0 to modulus-1)
     this.currentGen = make2Darray(this.cols, this.rows);
     this.nextGen = make2Darray(this.cols, this.rows);
     this.cellColors = make2Darray(this.cols, this.rows);
@@ -50,8 +57,63 @@ class CellularAutomaton {
     this.vizCount = vizs.length;
     this.vizs = vizs;
 
-    // CA rule (default: Conway's Life)
+    // Protofield parameters
     this.rule = rule || CA_RULES.life;
+    this.modulus = this._getModulusForRule(rule);
+    this.kernel = this._getKernelForRule(rule);
+    this.kernelSize = this.kernel.length;
+    this.kernelRadius = Math.floor(this.kernelSize / 2);
+  }
+
+  /**
+   * Get modulus based on rule type
+   * @private
+   * @param {Object} rule - CA rule
+   * @returns {number} Modulus value
+   */
+  _getModulusForRule(rule) {
+    // Map different rules to different moduli
+    if (rule === CA_RULES.life) return 5;
+    if (rule === CA_RULES.highLife) return 7;
+    if (rule === CA_RULES.border) return 3;
+    return 5; // Default
+  }
+
+  /**
+   * Get kernel based on rule type
+   * @private
+   * @param {Object} rule - CA rule
+   * @returns {Array} 2D kernel array
+   */
+  _getKernelForRule(rule) {
+    // Custom kernel (5x5 with weighted center)
+    const customKernel = [
+      [1, 1, 1, 1, 1],
+      [1, 2, 2, 2, 1],
+      [1, 2, 0, 2, 1],
+      [1, 2, 2, 2, 1],
+      [1, 1, 1, 1, 1],
+    ];
+
+    // Moore neighborhood (3x3)
+    const mooreKernel = [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1],
+    ];
+
+    // Von Neumann (3x3)
+    const vonNeumannKernel = [
+      [0, 1, 0],
+      [1, 0, 1],
+      [0, 1, 0],
+    ];
+
+    // Map rules to kernels
+    if (rule === CA_RULES.life || rule === CA_RULES.highLife)
+      return customKernel;
+    if (rule === CA_RULES.border) return mooreKernel;
+    return customKernel; // Default
   }
 
   /**
@@ -88,7 +150,7 @@ class CellularAutomaton {
     this.showList = [];
     for (let i = 0; i < this.cols; i++) {
       for (let j = 0; j < this.rows; j++) {
-        if (this.currentGen[i][j] === 1) {
+        if (this.currentGen[i][j] > 0) {
           this.showList.push(
             new Cell(
               i,
@@ -191,17 +253,17 @@ class CellularAutomaton {
   }
 
   /**
-   * Compute next generation using CA rules
+   * Compute next generation using protofield convolution
    */
   compute() {
     // Update color and visibility for new generation
     this.cl = this.colors[this.colCounter % this.colCount];
     this.viz = this.vizs[this.colCounter % this.vizCount];
 
-    // Apply cellular automaton rules to all cells
-    for (let x = 1; x < this.cols - 1; x++) {
-      for (let y = 1; y < this.rows - 1; y++) {
-        this._applyRuleToCell(x, y);
+    // Apply protofield convolution to all cells
+    for (let x = 0; x < this.cols; x++) {
+      for (let y = 0; y < this.rows; y++) {
+        this._applyConvolution(x, y);
       }
     }
 
@@ -209,51 +271,36 @@ class CellularAutomaton {
   }
 
   /**
-   * Apply CA rule to a single cell
+   * Apply kernel convolution with modular arithmetic to a single cell
    * @private
    * @param {number} x - Cell X coordinate
    * @param {number} y - Cell Y coordinate
    */
-  _applyRuleToCell(x, y) {
-    const neighbors = this._countNeighbors(x, y);
-    const isAlive = this.currentGen[x][y] === 1;
+  _applyConvolution(x, y) {
+    let sum = 0;
 
-    if (isAlive) {
-      // Cell is alive - check survive conditions
-      if (this.rule.survive.includes(neighbors)) {
-        this.nextGen[x][y] = 1;
-        // Keep existing color and viz
-      } else {
-        this.nextGen[x][y] = 0;
-      }
-    } else {
-      // Cell is dead - check birth conditions
-      if (this.rule.birth.includes(neighbors)) {
-        this.nextGen[x][y] = 1;
-        this.cellColors[x][y] = this.cl;
-        this.cellViz[x][y] = this.viz;
-      } else {
-        this.nextGen[x][y] = 0;
+    // Apply convolution with kernel
+    for (let i = -this.kernelRadius; i <= this.kernelRadius; i++) {
+      for (let j = -this.kernelRadius; j <= this.kernelRadius; j++) {
+        // Wrap around edges (toroidal topology)
+        const nx = (x + i + this.cols) % this.cols;
+        const ny = (y + j + this.rows) % this.rows;
+        const ki = i + this.kernelRadius;
+        const kj = j + this.kernelRadius;
+
+        sum += this.currentGen[nx][ny] * this.kernel[ki][kj];
       }
     }
-  }
 
-  /**
-   * Count living neighbors (Moore neighborhood - 8 cells)
-   * @private
-   * @param {number} x - Cell X coordinate
-   * @param {number} y - Cell Y coordinate
-   * @returns {number} Number of living neighbors
-   */
-  _countNeighbors(x, y) {
-    let neighbors = 0;
-    for (let i = -1; i <= 1; i++) {
-      for (let j = -1; j <= 1; j++) {
-        if (i === 0 && j === 0) continue;
-        if (this.currentGen[x + i][y + j] === 1) neighbors++;
-      }
+    // Apply modulus
+    const newValue = sum % this.modulus;
+    this.nextGen[x][y] = newValue;
+
+    // Update color and visibility for newly activated cells
+    if (newValue > 0 && this.currentGen[x][y] === 0) {
+      this.cellColors[x][y] = this.cl;
+      this.cellViz[x][y] = this.viz;
     }
-    return neighbors;
   }
 
   /**
@@ -278,12 +325,16 @@ class CellularAutomaton {
    * @returns {string}
    */
   getStateString() {
-    let aliveCells = 0;
+    let activeCells = 0;
+    let totalValue = 0;
     for (let i = 0; i < this.cols; i++) {
       for (let j = 0; j < this.rows; j++) {
-        if (this.currentGen[i][j] === 1) aliveCells++;
+        if (this.currentGen[i][j] > 0) {
+          activeCells++;
+          totalValue += this.currentGen[i][j];
+        }
       }
     }
-    return `Generation: ${this.colCounter}, Alive: ${aliveCells}`;
+    return `Generation: ${this.colCounter}, Active: ${activeCells}, Total Value: ${totalValue}`;
   }
 }

@@ -1,30 +1,98 @@
-// Main Sketch - Protofield Cellular Automaton
+// Main Sketch - Protofield Cellular Automaton with Region System
+// Multiple regions: b0 (outer border), b1 (main border), b2 (inner border), f0 (field)
 
-// Initialize token data
-let tokenData = genTokenData(123);
-console.log("Token Data:", tokenData);
+// Region data structures
+let regions = {
+  b0: {
+    grid: [],
+    nextGrid: [],
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0,
+    thickness: 10,
+    enabled: true,
+    running: false,
+    bgColor: [240, 245, 255],
+  }, // Very pale blue - thickness was 20@2px, now 10@4px
+  b1: {
+    grid: [],
+    nextGrid: [],
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0,
+    thickness: 30,
+    enabled: true,
+    running: false,
+    bgColor: [245, 250, 255],
+  }, // Very pale cyan - thickness was 60@2px, now 30@4px
+  b2: {
+    grid: [],
+    nextGrid: [],
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0,
+    thickness: 8,
+    enabled: true,
+    running: false,
+    bgColor: [250, 252, 255],
+  }, // Very pale ice - thickness was 15@2px, now 8@4px (rounds to ~16px)
+  f0: {
+    grid: [],
+    nextGrid: [],
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0,
+    thickness: 0,
+    enabled: true,
+    running: false,
+    bgColor: [252, 253, 255],
+  }, // Almost white blue
+};
 
-// Initialize random number generator
-let R;
+// Global parameters
+let canvasWidth = 800;
+let canvasHeight = 1000;
+let cellSize = 4; // One cell size for entire canvas (4px = half the resolution, quarter the cells)
 
-// Canvas and rendering
-let canvas;
-let canvasWid, canvasHei;
-let myScaledCanvas;
-let currentScale = 1;
-
-// Image saving modes
-let imgSaveMode = false;
-let twitterHead = false;
-
-// Generation counter
-let counter = 0;
-
-// Cellular Automaton instances
-let b0, b1, b2, f0;
-
-// Runtime variables
-const vars = { tokenData };
+// Region-specific parameters
+let regionParams = {
+  b0: {
+    modulus: 3,
+    kernelType: "moore",
+    color: "#0000FF",
+    minThreshold: 0,
+    maxThreshold: 0,
+    seedPointsPerSide: 6,
+  },
+  b1: {
+    modulus: 5,
+    kernelType: "custom",
+    color: "#FF0000",
+    minThreshold: 0,
+    maxThreshold: 0,
+    seedPointsPerSide: 3,
+  },
+  b2: {
+    modulus: 3,
+    kernelType: "moore",
+    color: "#00FF00",
+    minThreshold: 0,
+    maxThreshold: 0,
+    seedPointsPerSide: 3,
+  },
+  f0: {
+    modulus: 5,
+    kernelType: "custom",
+    color: "#000000",
+    minThreshold: 0,
+    maxThreshold: 0,
+    seedPoints: 1, // Number of seed points (1-3), evenly spaced horizontally
+  },
+};
 
 /**
  * p5.js setup function
@@ -32,350 +100,383 @@ const vars = { tokenData };
 function setup() {
   pixelDensity(1);
 
-  // Calculate canvas dimensions to fit window
-  let w = window.innerWidth;
-  let h = Math.floor((CONFIG.gHeight / CONFIG.gWidth) * window.innerWidth);
-
-  if (h > window.innerHeight) {
-    h = window.innerHeight;
-    w = Math.floor((CONFIG.gWidth / CONFIG.gHeight) * window.innerHeight);
-  }
-
-  canvas = createCanvas(w, h);
-  canvasWid = canvas.width;
-  canvasHei = canvas.height;
-  currentScale = canvas.width / CONFIG.gWidth;
-
+  // Create canvas
+  createCanvas(windowWidth, windowHeight);
   noStroke();
+  noSmooth(); // Disable anti-aliasing for pixel-perfect rendering
+  noLoop();
 
-  // Initialize system
-  R = new Random(tokenData);
-  randomize();
-  initializeAll();
-  canvasInit();
+  // Set initial frame rate
+  frameRate(60);
+
+  // Calculate region dimensions
+  calculateRegionDimensions();
+
+  // Initialize all regions
+  initializeAllRegions();
+
+  // Initial draw
+  redraw();
+
+  console.log("Region system initialized");
+  console.log("b0:", regions.b0.width, "×", regions.b0.height, "cells");
+  console.log("b1:", regions.b1.width, "×", regions.b1.height, "cells");
+  console.log("b2:", regions.b2.width, "×", regions.b2.height, "cells");
+  console.log("f0:", regions.f0.width, "×", regions.f0.height, "cells");
 }
 
 /**
  * p5.js draw loop
  */
 function draw() {
-  myScaledCanvas.push();
-  myScaledCanvas.scale(currentScale);
+  background(255);
 
-  // Update border 0
-  if (counter <= vars.b0Frames) {
-    b0.initialize();
-    b0.symmetricShow(myScaledCanvas);
-    b0.compute();
-    b0.dump();
+  // Center the canvas content
+  push();
+  translate((width - canvasWidth) / 2, (height - canvasHeight) / 2);
+
+  // Draw a white background for the entire canvas area
+  fill(255);
+  rect(0, 0, canvasWidth, canvasHeight);
+
+  // Draw each region in order (back to front)
+  drawRegion("b0");
+  drawRegion("b1");
+  drawRegion("b2");
+  drawRegion("f0");
+
+  pop();
+}
+
+/**
+ * Calculate dimensions for all regions based on canvas size
+ */
+function calculateRegionDimensions() {
+  // All regions use the same cellSize for coherent look
+
+  // b0 - Outer border (full canvas)
+  regions.b0.width = Math.floor(canvasWidth / cellSize);
+  regions.b0.height = Math.floor(canvasHeight / cellSize);
+  regions.b0.offsetX = 0;
+  regions.b0.offsetY = 0;
+
+  // b1 - Main border (inside b0)
+  const b0Thick = regions.b0.thickness;
+  regions.b1.width = Math.floor(canvasWidth / cellSize - b0Thick * 2);
+  regions.b1.height = Math.floor(canvasHeight / cellSize - b0Thick * 2);
+  regions.b1.offsetX = b0Thick;
+  regions.b1.offsetY = b0Thick;
+
+  // b2 - Inner border (inside b1)
+  const b1Thick = regions.b1.thickness;
+  regions.b2.width = Math.floor(regions.b1.width - b1Thick * 2);
+  regions.b2.height = Math.floor(regions.b1.height - b1Thick * 2);
+  regions.b2.offsetX = b0Thick + b1Thick;
+  regions.b2.offsetY = b0Thick + b1Thick;
+
+  // f0 - Field (inside b2)
+  const b2Thick = regions.b2.thickness;
+  regions.f0.width = Math.floor(regions.b2.width - b2Thick * 2);
+  regions.f0.height = Math.floor(regions.b2.height - b2Thick * 2);
+  regions.f0.offsetX = b0Thick + b1Thick + b2Thick;
+  regions.f0.offsetY = b0Thick + b1Thick + b2Thick;
+}
+
+/**
+ * Initialize all regions
+ */
+function initializeAllRegions() {
+  for (let regionName in regions) {
+    initializeRegion(regionName);
+  }
+}
+
+/**
+ * Initialize a single region
+ */
+function initializeRegion(regionName) {
+  const region = regions[regionName];
+  const w = region.width;
+  const h = region.height;
+
+  // Allocate grids
+  region.grid = new Array(w);
+  region.nextGrid = new Array(w);
+
+  for (let x = 0; x < w; x++) {
+    region.grid[x] = new Array(h);
+    region.nextGrid[x] = new Array(h);
+    for (let y = 0; y < h; y++) {
+      region.grid[x][y] = 0;
+      region.nextGrid[x][y] = 0;
+    }
   }
 
-  // Update border 1
-  if (counter <= vars.b1Frames) {
-    b1.initialize();
-    b1.symmetricShow(myScaledCanvas);
-    b1.compute();
-    b1.dump();
-  }
+  // Set initial seed pattern
+  const params = regionParams[regionName];
 
-  // Update border 2
-  if (counter <= vars.b2Frames) {
-    b2.initialize();
-    b2.symmetricShow(myScaledCanvas);
-    b2.compute();
-    b2.dump();
-  }
+  if (regionName === "f0") {
+    // Field: 1-3 seed points evenly spaced vertically
+    const seedCount = Math.min(Math.max(1, params.seedPoints || 1), 3);
+    const centerX = Math.floor(w / 2);
 
-  // Update field
-  if (counter <= vars.f0Frames) {
-    f0.initialize();
-    f0.symmetricShow(myScaledCanvas);
-    f0.compute();
-    f0.dump();
-  }
-
-  myScaledCanvas.pop();
-
-  // Handle image saving mode
-  if (imgSaveMode) {
-    fill(255);
-    textSize(100);
-    text("Saving Image....", 10, canvas.height / 2);
+    if (seedCount === 1) {
+      // Single center point
+      const centerY = Math.floor(h / 2);
+      region.grid[centerX][centerY] = 1;
+    } else if (seedCount === 2) {
+      // Two points evenly spaced vertically
+      const spacing = Math.floor(h / 3);
+      const y1 = spacing;
+      const y2 = h - spacing - 1;
+      region.grid[centerX][y1] = 1;
+      region.grid[centerX][y2] = 1;
+    } else if (seedCount === 3) {
+      // Three points evenly spaced vertically
+      const spacing = Math.floor(h / 4);
+      const y1 = spacing;
+      const y2 = Math.floor(h / 2);
+      const y3 = h - spacing - 1;
+      region.grid[centerX][y1] = 1;
+      region.grid[centerX][y2] = 1;
+      region.grid[centerX][y3] = 1;
+    }
   } else {
-    image(myScaledCanvas, 0, 0);
-  }
+    // Borders: multiple seed points along edges, evenly spaced starting at corners
+    const thick = region.thickness;
+    const seedCount = params.seedPointsPerSide;
 
-  // Check if animation is complete
-  if (counter > vars.totalFrames) {
-    if (imgSaveMode) {
-      save(myScaledCanvas, tokenData.hash + "_hires", "png");
-      image(myScaledCanvas, 0, 0, canvas.width, canvas.height);
-      twitterHead = false;
-      imgSaveMode = false;
-      currentScale = canvas.width / CONFIG.gWidth;
-      noLoop();
-    } else {
-      noLoop();
+    // Place seeds in the middle of the border thickness
+    const midThickness = Math.floor(thick / 2);
+
+    // Top edge: evenly spaced from left corner to right corner
+    for (let i = 0; i < seedCount; i++) {
+      const x =
+        Math.round((i * (w - 1 - 2 * midThickness)) / (seedCount - 1)) +
+        midThickness;
+      const y = midThickness;
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        region.grid[x][y] = 1;
+      }
+    }
+
+    // Bottom edge: evenly spaced from left corner to right corner
+    for (let i = 0; i < seedCount; i++) {
+      const x =
+        Math.round((i * (w - 1 - 2 * midThickness)) / (seedCount - 1)) +
+        midThickness;
+      const y = h - midThickness - 1;
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        region.grid[x][y] = 1;
+      }
+    }
+
+    // Left edge: evenly spaced from top corner to bottom corner
+    // Skip i=0 and i=seedCount-1 to avoid re-placing corners
+    for (let i = 0; i < seedCount; i++) {
+      const x = midThickness;
+      const y =
+        Math.round((i * (h - 1 - 2 * midThickness)) / (seedCount - 1)) +
+        midThickness;
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        region.grid[x][y] = 1;
+      }
+    }
+
+    // Right edge: evenly spaced from top corner to bottom corner
+    // Skip i=0 and i=seedCount-1 to avoid re-placing corners
+    for (let i = 0; i < seedCount; i++) {
+      const x = w - midThickness - 1;
+      const y =
+        Math.round((i * (h - 1 - 2 * midThickness)) / (seedCount - 1)) +
+        midThickness;
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        region.grid[x][y] = 1;
+      }
+    }
+  }
+}
+
+/**
+ * Draw a single region
+ */
+function drawRegion(regionName) {
+  const region = regions[regionName];
+  if (!region.enabled) return;
+
+  const params = regionParams[regionName];
+  const w = region.width;
+  const h = region.height;
+  const offsetX = region.offsetX * cellSize; // Convert cell offset to pixels
+  const offsetY = region.offsetY * cellSize;
+
+  // First, draw background for debugging (entire region at once)
+  fill(region.bgColor[0], region.bgColor[1], region.bgColor[2]);
+  rect(offsetX, offsetY, w * cellSize, h * cellSize);
+
+  // Parse region color
+  const regionColor = hexToRgb(params.color);
+
+  // Draw only non-zero cells that pass threshold
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      const value = region.grid[x][y];
+
+      // Skip empty cells
+      if (value === 0) continue;
+
+      // Apply threshold filters
+      let shouldDraw = true;
+
+      // Min threshold: hide cells with values less than threshold
+      if (params.minThreshold > 0 && value < params.minThreshold) {
+        shouldDraw = false;
+      }
+
+      // Max threshold: hide cells with values greater than threshold
+      if (params.maxThreshold > 0 && value > params.maxThreshold) {
+        shouldDraw = false;
+      }
+
+      if (shouldDraw) {
+        // Create gradient based on cell value and modulus
+        // Like html_old.html: intensity increases with value
+        const intensity = Math.floor(255 * (value / (params.modulus - 1)));
+        const r = Math.floor((regionColor.r * (255 - intensity)) / 255);
+        const g = Math.floor((regionColor.g * (255 - intensity)) / 255);
+        const b = Math.floor((regionColor.b * (255 - intensity)) / 255);
+
+        fill(r, g, b);
+        rect(
+          offsetX + x * cellSize,
+          offsetY + y * cellSize,
+          cellSize,
+          cellSize
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Update a single region (one generation)
+ */
+function updateRegion(regionName) {
+  const region = regions[regionName];
+  const params = regionParams[regionName];
+  const w = region.width;
+  const h = region.height;
+
+  const kernel = getKernel(params.kernelType);
+  const kernelSize = kernel.length;
+  const kernelRadius = Math.floor(kernelSize / 2);
+
+  // Compute next state for each cell
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      let sum = 0;
+
+      // Apply convolution with kernel
+      for (let i = -kernelRadius; i <= kernelRadius; i++) {
+        for (let j = -kernelRadius; j <= kernelRadius; j++) {
+          // Wrap around edges (toroidal topology)
+          const nx = (x + i + w) % w;
+          const ny = (y + j + h) % h;
+          const ki = i + kernelRadius;
+          const kj = j + kernelRadius;
+
+          sum += region.grid[nx][ny] * kernel[ki][kj];
+        }
+      }
+
+      // Apply modulus (protofield algorithm)
+      region.nextGrid[x][y] = sum % params.modulus;
     }
   }
 
-  counter++;
+  // Swap grids
+  const temp = region.grid;
+  region.grid = region.nextGrid;
+  region.nextGrid = temp;
 }
 
 /**
- * Handle keyboard input
+ * Update all enabled and running regions
  */
-function keyPressed() {
-  if (key == "r") reLoop();
-  if (key == "h") saveImageRes(1716);
-  if (key == "j") saveImageRes(3432);
-}
-
-/**
- * Randomize all generation parameters
- */
-function randomize() {
-  vars.totalFrames = 240;
-
-  // Border 0 (outer thin border)
-  vars.b0Frames = 240;
-  vars.b0Width = CONFIG.gWidth;
-  vars.b0Height = CONFIG.gHeight;
-  vars.b0Thick = wtRandom(
-    BORDER_CONFIG.subBorderThicknesses,
-    BORDER_CONFIG.subBorder1Probabilities,
-    R
-  )[0];
-  vars.b0Offset = 2;
-  vars.b0SpawnX = [
-    vars.b0Offset,
-    Math.round(vars.b0Width / CONFIG.gRez) / 2,
-    vars.b0Offset,
-  ];
-  vars.b0SpawnY = [
-    vars.b0Offset,
-    vars.b0Offset,
-    Math.round(vars.b0Height / CONFIG.gRez) / 2,
-  ];
-
-  // Border 1 (main border)
-  vars.b1Width = vars.b0Width - vars.b0Thick * CONFIG.gRez * 2;
-  vars.b1Height = vars.b0Height - vars.b0Thick * CONFIG.gRez * 2;
-  vars.b1Thick = wtRandom(
-    BORDER_CONFIG.thicknesses,
-    BORDER_CONFIG.thicknessProbabilities,
-    R
-  )[0];
-  vars.b1Offset = Math.floor(
-    vars.b1Thick *
-      wtRandom(BORDER_CONFIG.placements, BORDER_CONFIG.placementProbabilities, R)[0]
-  );
-
-  const b1Cols = Math.round(vars.b1Width / CONFIG.gRez);
-  const b1Rows = Math.round(vars.b1Height / CONFIG.gRez);
-  vars.b1SpawnX = [vars.b1Offset, b1Cols / 2, vars.b1Offset];
-  vars.b1SpawnY = [vars.b1Offset, vars.b1Offset, b1Rows / 2];
-
-  const b1Cnt = wtRandom(BORDER_CONFIG.counts, BORDER_CONFIG.countProbabilities, R);
-  const b1CntX = b1Cnt[0];
-  const bFr = wtRandom(
-    BORDER_CONFIG.progressions[b1Cnt[1]],
-    BORDER_CONFIG.progressionProbabilities,
-    R
-  )[0];
-  vars.b1Frames = R.r_int(bFr[0], bFr[1]);
-
-  const b1StepX = (b1Cols / 2 - vars.b1Offset) / b1CntX;
-  vars.b1Stgr = wtRandom(BORDER_CONFIG.staggers, BORDER_CONFIG.staggerProbabilities, R)[0];
-
-  for (let i = 1; i < b1CntX; i++) {
-    vars.b1SpawnX.push(Math.round(vars.b1Offset + b1StepX * i));
-    vars.b1SpawnY.push(
-      vars.b1Offset +
-        Math.floor(
-          R.r_int(-vars.b1Offset + 1, vars.b1Thick - vars.b1Offset) * vars.b1Stgr
-        )
-    );
-  }
-
-  const b1CntY = Math.floor((CONFIG.gHeight / CONFIG.gWidth) * b1CntX);
-  const b1StepY = (b1Rows / 2 - vars.b1Offset) / b1CntY;
-
-  for (let i = 1; i < b1CntY; i++) {
-    vars.b1SpawnX.push(
-      vars.b1Offset +
-        Math.floor(
-          R.r_int(-vars.b1Offset + 1, vars.b1Thick - vars.b1Offset) * vars.b1Stgr
-        )
-    );
-    vars.b1SpawnY.push(Math.round(vars.b1Offset + b1StepY * i));
-  }
-
-  vars.b1Intr = wtRandom(INTERPOLATION.patterns, INTERPOLATION.probabilities, R)[0];
-
-  // Border 2 (inner thin border)
-  vars.b2Frames = 240;
-  vars.b2Width = vars.b1Width - vars.b1Thick * CONFIG.gRez * 2;
-  vars.b2Height = vars.b1Height - vars.b1Thick * CONFIG.gRez * 2;
-  vars.b2Thick = wtRandom(
-    BORDER_CONFIG.subBorderThicknesses,
-    BORDER_CONFIG.subBorder2Probabilities,
-    R
-  )[0];
-  vars.b2Offset = 2;
-  vars.b2SpawnX = [
-    vars.b2Offset,
-    Math.round(vars.b2Width / CONFIG.gRez) / 2,
-    vars.b2Offset,
-  ];
-  vars.b2SpawnY = [
-    vars.b2Offset,
-    vars.b2Offset,
-    Math.round(vars.b2Height / CONFIG.gRez) / 2,
-  ];
-
-  // Field (main cellular automaton)
-  vars.totalBorderThick = vars.b0Thick + vars.b1Thick + vars.b2Thick;
-
-  const f0Cnt = wtRandom(FIELD_CONFIG.counts, FIELD_CONFIG.countProbabilities, R);
-  vars.f0SpawnCount = f0Cnt[0];
-
-  const fFr = wtRandom(
-    FIELD_CONFIG.progressions[f0Cnt[1]],
-    FIELD_CONFIG.progressionProbabilities,
-    R
-  )[0];
-  vars.f0Frames = R.r_int(fFr[0], fFr[1]);
-
-  vars.f0Width = CONFIG.gWidth - vars.totalBorderThick * CONFIG.gRez * 2;
-  vars.f0Height = CONFIG.gHeight - vars.totalBorderThick * CONFIG.gRez * 2;
-  vars.f0SpawnX = [];
-  vars.f0SpawnY = [];
-
-  const f0Cols = Math.round(vars.f0Width / CONFIG.gRez);
-  const f0Rows = Math.round(vars.f0Height / CONFIG.gRez);
-
-  // Center spawn point
-  vars.f0SpawnX.push(f0Cols / 2);
-  vars.f0SpawnY.push(f0Rows / 2);
-
-  // Additional random spawn points
-  while (vars.f0SpawnX.length < vars.f0SpawnCount) {
-    const x = R.r_int(3, f0Cols / 2 - 11);
-    const y = R.r_int(3, f0Rows / 2 - 11);
-    let sum = 0;
-
-    for (let i = 0; i < vars.f0SpawnX.length; i++) {
-      if (dist(x, y, vars.f0SpawnX[i], vars.f0SpawnY[i]) < 40) sum++;
-    }
-
-    if (sum == 0) {
-      vars.f0SpawnX.push(x);
-      vars.f0SpawnY.push(y);
+function updateAllRegions() {
+  for (let regionName in regions) {
+    if (regions[regionName].enabled && regions[regionName].running) {
+      updateRegion(regionName);
     }
   }
-
-  vars.f0Intr = wtRandom(INTERPOLATION.patterns, INTERPOLATION.probabilities, R)[0];
-
-  // Select color palette
-  const colI = wtRandom(COLORS.backgrounds, COLORS.paletteProbabilities, R)[1];
-  vars.bCol = COLORS.backgrounds[colI];
-  vars.brdCol = COLORS.borders[colI];
-  vars.fldCol = COLORS.fields[colI];
-
-  console.log("Border Count:", b1CntX, "Frames:", vars.b1Frames);
-  console.log("Field Spawns:", vars.f0SpawnCount, "Frames:", vars.f0Frames);
 }
 
 /**
- * Initialize all cellular automaton instances
+ * Update all enabled regions (ignores running state - used for step)
  */
-function initializeAll() {
-  b0 = new CellularAutomaton(
-    CONFIG.gRez,
-    vars.b0Width,
-    vars.b0Height,
-    true,
-    vars.b0Thick,
-    vars.b0SpawnX,
-    vars.b0SpawnY,
-    vars.fldCol,
-    [1],
-    CA_RULES.border
-  );
-
-  b1 = new CellularAutomaton(
-    CONFIG.gRez,
-    vars.b1Width,
-    vars.b1Height,
-    true,
-    vars.b1Thick,
-    vars.b1SpawnX,
-    vars.b1SpawnY,
-    vars.brdCol,
-    vars.b1Intr,
-    CA_RULES.highLife
-  );
-
-  b2 = new CellularAutomaton(
-    CONFIG.gRez,
-    vars.b2Width,
-    vars.b2Height,
-    true,
-    vars.b2Thick,
-    vars.b2SpawnX,
-    vars.b2SpawnY,
-    vars.brdCol,
-    [1],
-    CA_RULES.border
-  );
-
-  f0 = new CellularAutomaton(
-    CONFIG.gRez,
-    vars.f0Width,
-    vars.f0Height,
-    false,
-    0,
-    vars.f0SpawnX,
-    vars.f0SpawnY,
-    vars.fldCol,
-    vars.f0Intr,
-    CA_RULES.life
-  );
+function updateAllRegionsForce() {
+  for (let regionName in regions) {
+    if (regions[regionName].enabled) {
+      updateRegion(regionName);
+    }
+  }
 }
 
 /**
- * Restart animation loop
+ * Get kernel based on type
  */
-function reLoop() {
-  initializeAll();
-  canvasInit();
-  counter = 0;
-  loop();
-  background(vars.bCol);
+function getKernel(type) {
+  const kernels = {
+    point: [
+      [0, 0, 0],
+      [0, 1, 0],
+      [0, 0, 0],
+    ],
+    moore: [
+      [1, 1, 1],
+      [1, 0, 1],
+      [1, 1, 1],
+    ],
+    vonNeumann: [
+      [0, 1, 0],
+      [1, 0, 1],
+      [0, 1, 0],
+    ],
+    cross: [
+      [0, 1, 0],
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    custom: [
+      [1, 1, 1, 1, 1],
+      [1, 2, 2, 2, 1],
+      [1, 2, 0, 2, 1],
+      [1, 2, 2, 2, 1],
+      [1, 1, 1, 1, 1],
+    ],
+  };
+
+  return kernels[type] || kernels.custom;
 }
 
 /**
- * Initialize canvas graphics buffer
+ * Convert hex color to RGB
  */
-function canvasInit() {
-  myScaledCanvas = createGraphics(
-    CONFIG.gWidth * currentScale,
-    CONFIG.gHeight * currentScale
-  );
-  myScaledCanvas.clear();
-  myScaledCanvas.push();
-  myScaledCanvas.scale(currentScale);
-  myScaledCanvas.background(vars.bCol);
-  myScaledCanvas.pop();
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
+    : { r: 0, g: 0, b: 0 };
 }
 
 /**
- * Save image at specified resolution
- * @param {number} resW - Desired width in pixels
+ * Handle window resize
  */
-function saveImageRes(resW) {
-  imgSaveMode = true;
-  currentScale = resW / CONFIG.gWidth;
-  reLoop();
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  redraw();
 }
