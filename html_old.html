@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protofield Cellular Automaton</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      canvas {
+        border: 1px solid #000;
+        margin-top: 10px;
+        background-color: white;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        -ms-interpolation-mode: nearest-neighbor;
+      }
+      .controls {
+        margin-bottom: 20px;
+      }
+      .control-group {
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 5px 10px;
+        margin-right: 10px;
+      }
+      select,
+      input {
+        margin-right: 10px;
+      }
+      #canvasContainer {
+        overflow: auto;
+        max-width: 100%;
+        max-height: 80vh;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Protofield Cellular Automaton</h1>
+    <div class="controls">
+      <div class="control-group">
+        <button id="startBtn">Start</button>
+        <button id="stopBtn">Stop</button>
+        <button id="resetBtn">Reset</button>
+        <button id="stepBtn">Step</button>
+        <button id="fractalSeedBtn">Fractal Seed</button>
+        <button id="exportBtn">Export PNG</button>
+      </div>
+      <div class="control-group">
+        <button id="exportSettingsBtn">Export Settings</button>
+        <button id="importSettingsBtn">Import Settings</button>
+        <input
+          type="file"
+          id="importSettingsFile"
+          accept=".json"
+          style="display: none"
+        />
+      </div>
+      <div class="control-group">
+        <label for="primeSelect">Modulus (prime):</label>
+        <select id="primeSelect">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="7">7</option>
+          <option value="11">11</option>
+        </select>
+        <label for="gridSize">Grid Size (4:5 ratio for A0):</label>
+        <select id="gridSize">
+          <option value="400x500">400×500</option>
+        </select>
+        <label for="cellSize">Cell Size:</label>
+        <select id="cellSize">
+          <option value="1" selected>1px</option>
+          <option value="2">2px</option>
+          <option value="4">4px</option>
+        </select>
+        <label for="colorScheme">Color Scheme:</label>
+        <select id="colorScheme">
+          <option value="blue" selected>Blue/White</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="kernelSelect">Kernel Type:</label>
+        <select id="kernelSelect">
+          <option value="point">Single Point</option>
+          <option value="moore">Moore Neighborhood</option>
+          <option value="vonNeumann">Von Neumann</option>
+          <option value="cross">Cross</option>
+          <option value="custom" selected>Custom</option>
+        </select>
+        <label for="stepsPerFrame">Steps per Frame:</label>
+        <input type="number" id="stepsPerFrame" min="1" max="50" value="1" />
+        <label for="iterationsCount">Total Steps:</label>
+        <input
+          type="number"
+          id="iterationsCount"
+          min="0"
+          max="1000"
+          value="0"
+          readonly
+        />
+      </div>
+      <div class="control-group">
+        <label for="minThreshold">Min Threshold (0 = off):</label>
+        <input
+          type="range"
+          id="minThreshold"
+          min="0"
+          max="11"
+          value="0"
+          step="1"
+        />
+        <span id="minThresholdValue">0</span>
+        <label for="maxThreshold">Max Threshold (0 = off):</label>
+        <input
+          type="range"
+          id="maxThreshold"
+          min="0"
+          max="11"
+          value="0"
+          step="1"
+        />
+        <span id="maxThresholdValue">0</span>
+      </div>
+    </div>
+    <div id="canvasContainer">
+      <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+      // Canvas setup
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.imageSmoothingEnabled = false; // Disable anti-aliasing for sharp pixels
+
+      // Parse grid size (format: "WIDTHxHEIGHT")
+      function parseGridSize() {
+        const sizeStr = document.getElementById("gridSize").value;
+        const [width, height] = sizeStr.split("x").map(Number);
+        return { width, height };
+      }
+
+      let gridSize = parseGridSize();
+      let gridWidth = gridSize.width;
+      let gridHeight = gridSize.height;
+      let cellSizeValue = parseInt(document.getElementById("cellSize").value);
+      let modulus = parseInt(document.getElementById("primeSelect").value);
+      let iterationsCount = 0;
+
+      // Set canvas size
+      function resizeCanvas() {
+        gridSize = parseGridSize();
+        gridWidth = gridSize.width;
+        gridHeight = gridSize.height;
+        cellSizeValue = parseInt(document.getElementById("cellSize").value);
+        canvas.width = gridWidth * cellSizeValue;
+        canvas.height = gridHeight * cellSizeValue;
+        ctx.imageSmoothingEnabled = false; // Need to set again after resize
+      }
+      resizeCanvas();
+
+      // Grid data
+      let grid = [];
+      let nextGrid = [];
+
+      // Animation control
+      let animationId = null;
+      let running = false;
+      let stepsPerFrame = 1;
+
+      // Initialize grids
+      function initializeGrids() {
+        grid = Array(gridWidth)
+          .fill()
+          .map(() => Array(gridHeight).fill(0));
+        nextGrid = Array(gridWidth)
+          .fill()
+          .map(() => Array(gridHeight).fill(0));
+
+        // Set a single cell in the middle to 1 (seed)
+        const centerX = Math.floor(gridWidth / 2);
+        const centerY = Math.floor(gridHeight / 2);
+        grid[centerX][centerY] = 1;
+
+        // Add a small cross pattern
+        grid[centerX - 1][centerY] = 1;
+        grid[centerX + 1][centerY] = 1;
+        grid[centerX][centerY - 1] = 1;
+        grid[centerX][centerY + 1] = 1;
+
+        iterationsCount = 0;
+        document.getElementById("iterationsCount").value = iterationsCount;
+      }
+
+      // Define different kernel types
+      function getKernel(type) {
+        const kernelTypes = {
+          point: [
+            [0, 0, 0],
+            [0, 1, 0],
+            [0, 0, 0],
+          ],
+          moore: [
+            [1, 1, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+          ],
+          vonNeumann: [
+            [0, 1, 0],
+            [1, 0, 1],
+            [0, 1, 0],
+          ],
+          cross: [
+            [0, 1, 0],
+            [1, 1, 1],
+            [0, 1, 0],
+          ],
+          custom: [
+            [1, 1, 1, 1, 1],
+            [1, 2, 2, 2, 1],
+            [1, 2, 0, 2, 1],
+            [1, 2, 2, 2, 1],
+            [1, 1, 1, 1, 1],
+          ],
+        };
+
+        return kernelTypes[type] || kernelTypes.custom;
+      }
+
+      // Update the grid based on the protofield operator
+      function updateGrid() {
+        modulus = parseInt(document.getElementById("primeSelect").value);
+        const kernelType = document.getElementById("kernelSelect").value;
+        const kernel = getKernel(kernelType);
+        const kernelSize = kernel.length;
+        const kernelRadius = Math.floor(kernelSize / 2);
+
+        // Compute next state for each cell
+        for (let x = 0; x < gridWidth; x++) {
+          for (let y = 0; y < gridHeight; y++) {
+            let sum = 0;
+
+            // Apply convolution with kernel
+            for (let i = -kernelRadius; i <= kernelRadius; i++) {
+              for (let j = -kernelRadius; j <= kernelRadius; j++) {
+                const nx = (x + i + gridWidth) % gridWidth; // Wrap around
+                const ny = (y + j + gridHeight) % gridHeight; // Wrap around
+                const ki = i + kernelRadius;
+                const kj = j + kernelRadius;
+
+                sum += grid[nx][ny] * kernel[ki][kj];
+              }
+            }
+
+            // Apply modulus
+            nextGrid[x][y] = sum % modulus;
+          }
+        }
+
+        // Swap grids
+        [grid, nextGrid] = [nextGrid, grid];
+        iterationsCount++;
+        document.getElementById("iterationsCount").value = iterationsCount;
+      }
+
+      // Draw the grid
+      function drawGrid() {
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const colorScheme = document.getElementById("colorScheme").value;
+        const minThreshold = parseInt(
+          document.getElementById("minThreshold").value
+        );
+        const maxThreshold = parseInt(
+          document.getElementById("maxThreshold").value
+        );
+
+        // Get color map based on selected scheme
+        const colorMap = getColorMap(colorScheme);
+
+        // Create an ImageData object for pixel-perfect rendering
+        const imageData = ctx.createImageData(canvas.width, canvas.height);
+        const data = imageData.data;
+
+        for (let x = 0; x < gridWidth; x++) {
+          for (let y = 0; y < gridHeight; y++) {
+            const value = grid[x][y];
+
+            // Apply threshold filters
+            let shouldDraw = value > 0;
+
+            // Min threshold: skip if value is less than threshold (lighter values)
+            if (minThreshold > 0 && value < minThreshold) {
+              shouldDraw = false;
+            }
+
+            // Max threshold: skip if value is greater than threshold (darker values)
+            if (maxThreshold > 0 && value > maxThreshold) {
+              shouldDraw = false;
+            }
+
+            if (shouldDraw) {
+              const color = colorMap[value];
+
+              // For each pixel in the cell
+              for (let dx = 0; dx < cellSizeValue; dx++) {
+                for (let dy = 0; dy < cellSizeValue; dy++) {
+                  const pixelX = x * cellSizeValue + dx;
+                  const pixelY = y * cellSizeValue + dy;
+                  const pixelPos = (pixelY * canvas.width + pixelX) * 4;
+
+                  // Set RGB values
+                  data[pixelPos] = color[0]; // R
+                  data[pixelPos + 1] = color[1]; // G
+                  data[pixelPos + 2] = color[2]; // B
+                  data[pixelPos + 3] = 255; // A (fully opaque)
+                }
+              }
+            }
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      // Get color map based on selected scheme
+      function getColorMap(scheme) {
+        const colorMap = [];
+
+        for (let i = 0; i < modulus; i++) {
+          if (i === 0) {
+            colorMap.push([255, 255, 255]); // White
+          } else {
+            // Deep blue with varying intensity
+            const intensity = Math.floor(255 * (i / (modulus - 1)));
+            colorMap.push([0, 0, 255 - intensity]);
+          }
+        }
+
+        return colorMap;
+      }
+
+      // Animation loop
+      function animate() {
+        stepsPerFrame = parseInt(
+          document.getElementById("stepsPerFrame").value
+        );
+
+        for (let i = 0; i < stepsPerFrame; i++) {
+          updateGrid();
+        }
+
+        drawGrid();
+
+        if (running) {
+          animationId = requestAnimationFrame(animate);
+        }
+      }
+
+      // Create fractal seed pattern
+      function createFractalSeed() {
+        initializeGrids();
+        const centerX = Math.floor(gridWidth / 2);
+        const centerY = Math.floor(gridHeight / 2);
+
+        // Create a more complex initial pattern
+        for (let i = -3; i <= 3; i++) {
+          for (let j = -3; j <= 3; j++) {
+            if ((i + j) % 2 === 0 && Math.abs(i) + Math.abs(j) <= 4) {
+              grid[centerX + i][centerY + j] = 1;
+            }
+          }
+        }
+
+        drawGrid();
+      }
+
+      // Export canvas as PNG
+      function exportAsPNG() {
+        const link = document.createElement("a");
+        link.href = canvas.toDataURL("image/png");
+        link.download = `protofield_${modulus}_${iterationsCount}.png`;
+        link.click();
+      }
+
+      // Export settings as JSON
+      function exportSettings() {
+        const settings = {
+          modulus: document.getElementById("primeSelect").value,
+          gridSize: document.getElementById("gridSize").value,
+          cellSize: document.getElementById("cellSize").value,
+          colorScheme: document.getElementById("colorScheme").value,
+          kernelType: document.getElementById("kernelSelect").value,
+          stepsPerFrame: document.getElementById("stepsPerFrame").value,
+          iterationsCount: iterationsCount,
+          minThreshold: document.getElementById("minThreshold").value,
+          maxThreshold: document.getElementById("maxThreshold").value,
+        };
+
+        const jsonString = JSON.stringify(settings, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `protofield_settings_${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      // Import settings from JSON
+      function importSettings(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const settings = JSON.parse(e.target.result);
+
+            // Apply settings to UI elements
+            if (settings.modulus)
+              document.getElementById("primeSelect").value = settings.modulus;
+            if (settings.gridSize)
+              document.getElementById("gridSize").value = settings.gridSize;
+            if (settings.cellSize)
+              document.getElementById("cellSize").value = settings.cellSize;
+            if (settings.colorScheme)
+              document.getElementById("colorScheme").value =
+                settings.colorScheme;
+            if (settings.kernelType)
+              document.getElementById("kernelSelect").value =
+                settings.kernelType;
+            if (settings.stepsPerFrame)
+              document.getElementById("stepsPerFrame").value =
+                settings.stepsPerFrame;
+            if (settings.minThreshold !== undefined) {
+              document.getElementById("minThreshold").value =
+                settings.minThreshold;
+              document.getElementById("minThresholdValue").textContent =
+                settings.minThreshold;
+            }
+            if (settings.maxThreshold !== undefined) {
+              document.getElementById("maxThreshold").value =
+                settings.maxThreshold;
+              document.getElementById("maxThresholdValue").textContent =
+                settings.maxThreshold;
+            }
+
+            // Update internal variables and reset grid
+            modulus = parseInt(document.getElementById("primeSelect").value);
+            resizeCanvas();
+            initializeGrids();
+            drawGrid();
+
+            // Run generations to match the saved iteration count
+            if (settings.iterationsCount && settings.iterationsCount > 0) {
+              const targetIterations = parseInt(settings.iterationsCount);
+
+              // Run updates in batches for better performance
+              const batchSize = 100;
+              let currentBatch = 0;
+
+              function runBatch() {
+                const iterationsToRun = Math.min(
+                  batchSize,
+                  targetIterations - iterationsCount
+                );
+
+                for (let i = 0; i < iterationsToRun; i++) {
+                  updateGrid();
+                }
+
+                drawGrid();
+
+                if (iterationsCount < targetIterations) {
+                  // Continue with next batch
+                  requestAnimationFrame(runBatch);
+                } else {
+                  // Done
+                  alert("Settings imported and generation completed!");
+                }
+              }
+
+              runBatch();
+            } else {
+              alert("Settings imported successfully!");
+            }
+          } catch (error) {
+            alert("Error importing settings: " + error.message);
+          }
+        };
+        reader.readAsText(file);
+
+        // Reset file input so the same file can be imported again
+        event.target.value = "";
+      }
+
+      // Event listeners
+      document.getElementById("startBtn").addEventListener("click", () => {
+        if (!running) {
+          running = true;
+          animate();
+        }
+      });
+
+      document.getElementById("stopBtn").addEventListener("click", () => {
+        running = false;
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+      });
+
+      document.getElementById("resetBtn").addEventListener("click", () => {
+        running = false;
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+          animationId = null;
+        }
+        resizeCanvas();
+        initializeGrids();
+        drawGrid();
+      });
+
+      document.getElementById("stepBtn").addEventListener("click", () => {
+        updateGrid();
+        drawGrid();
+      });
+
+      document.getElementById("gridSize").addEventListener("change", () => {
+        resizeCanvas();
+        initializeGrids();
+        drawGrid();
+      });
+
+      document.getElementById("cellSize").addEventListener("change", () => {
+        resizeCanvas();
+        drawGrid();
+      });
+
+      document
+        .getElementById("colorScheme")
+        .addEventListener("change", drawGrid);
+
+      document
+        .getElementById("fractalSeedBtn")
+        .addEventListener("click", createFractalSeed);
+
+      document
+        .getElementById("exportBtn")
+        .addEventListener("click", exportAsPNG);
+
+      document
+        .getElementById("exportSettingsBtn")
+        .addEventListener("click", exportSettings);
+
+      document
+        .getElementById("importSettingsBtn")
+        .addEventListener("click", () => {
+          document.getElementById("importSettingsFile").click();
+        });
+
+      document
+        .getElementById("importSettingsFile")
+        .addEventListener("change", importSettings);
+
+      // Threshold sliders
+      document.getElementById("minThreshold").addEventListener("input", (e) => {
+        document.getElementById("minThresholdValue").textContent =
+          e.target.value;
+        drawGrid();
+      });
+
+      document.getElementById("maxThreshold").addEventListener("input", (e) => {
+        document.getElementById("maxThresholdValue").textContent =
+          e.target.value;
+        drawGrid();
+      });
+
+      // Initialize and draw
+      initializeGrids();
+      drawGrid();
+    </script>
+  </body>
+</html>
