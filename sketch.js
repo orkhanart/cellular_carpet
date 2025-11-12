@@ -54,9 +54,9 @@ let regions = {
 };
 
 // Global parameters
-let canvasWidth = 800;
-let canvasHeight = 1000;
-let cellSize = 4; // One cell size for entire canvas (4px = half the resolution, quarter the cells)
+let canvasWidth = 600;
+let canvasHeight = 750;
+let cellSize = 2; // One cell size for entire canvas
 
 // Region-specific parameters
 let regionParams = {
