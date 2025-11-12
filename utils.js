@@ -128,6 +128,20 @@ function make2Darray(cols, rows) {
 }
 
 /**
+ * Shuffle array using Fisher-Yates algorithm (uses p5.js random())
+ * @param {Array} array - Array to shuffle (will not modify original)
+ * @returns {Array} Shuffled copy of array
+ */
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+/**
  * Calculate features for token (placeholder)
  * @param {Object} tokenData - Token data
  * @returns {Object} Features object

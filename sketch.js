@@ -212,87 +212,90 @@ function initializeRegion(regionName) {
     }
   }
 
-  // Set initial seed pattern
+  // Set initial seed pattern with randomization for 666+ unique outcomes
   const params = regionParams[regionName];
 
   if (regionName === "f0") {
-    // Field: 1-3 seed points evenly spaced vertically
-    const seedCount = Math.min(Math.max(1, params.seedPoints || 1), 3);
-    const centerX = Math.floor(w / 2);
+    // Field: Randomized seed placement in first quadrant
+    // Strategy: 6×6 grid (36 positions) with 2-3 random seeds
+    // Outcomes: C(36,2) = 630 + variation from seed count = 666+ total outcomes
 
-    if (seedCount === 1) {
-      // Single center point
-      const centerY = Math.floor(h / 2);
-      region.grid[centerX][centerY] = 1;
-    } else if (seedCount === 2) {
-      // Two points evenly spaced vertically
-      const spacing = Math.floor(h / 3);
-      const y1 = spacing;
-      const y2 = h - spacing - 1;
-      region.grid[centerX][y1] = 1;
-      region.grid[centerX][y2] = 1;
-    } else if (seedCount === 3) {
-      // Three points evenly spaced vertically
-      const spacing = Math.floor(h / 4);
-      const y1 = spacing;
-      const y2 = Math.floor(h / 2);
-      const y3 = h - spacing - 1;
-      region.grid[centerX][y1] = 1;
-      region.grid[centerX][y2] = 1;
-      region.grid[centerX][y3] = 1;
+    // Define grid in first quadrant only (symmetry will be applied during rendering)
+    const gridCols = 6;
+    const gridRows = 6;
+    const quadrantW = Math.floor(w / 2);
+    const quadrantH = Math.floor(h / 2);
+
+    // Create possible positions (exclude edges to avoid collision with borders)
+    const positions = [];
+    for (let gx = 0; gx < gridCols; gx++) {
+      for (let gy = 0; gy < gridRows; gy++) {
+        const x = Math.floor((quadrantW / (gridCols + 1)) * (gx + 1));
+        const y = Math.floor((quadrantH / (gridRows + 1)) * (gy + 1));
+        positions.push({ x, y });
+      }
+    }
+
+    // Randomly select 2-3 seeds
+    const seedCount = random() > 0.5 ? 2 : 3;
+    const selectedPositions = shuffleArray(positions).slice(0, seedCount);
+
+    // Place seeds with symmetry
+    for (let pos of selectedPositions) {
+      // First quadrant
+      region.grid[pos.x][pos.y] = 1;
+      // Mirror to other quadrants
+      region.grid[w - pos.x - 1][pos.y] = 1; // Right reflection
+      region.grid[pos.x][h - pos.y - 1] = 1; // Bottom reflection
+      region.grid[w - pos.x - 1][h - pos.y - 1] = 1; // Diagonal reflection
     }
   } else {
-    // Borders: multiple seed points along edges, evenly spaced starting at corners
+    // Borders: Randomized seed placement along edges in first quadrant
+    // This adds additional variation while maintaining border structure
     const thick = region.thickness;
-    const seedCount = params.seedPointsPerSide;
-
-    // Place seeds in the middle of the border thickness
     const midThickness = Math.floor(thick / 2);
 
-    // Top edge: evenly spaced from left corner to right corner
-    for (let i = 0; i < seedCount; i++) {
-      const x =
-        Math.round((i * (w - 1 - 2 * midThickness)) / (seedCount - 1)) +
-        midThickness;
+    // Define possible seed positions along edges in first quadrant
+    const topEdgePositions = [];
+    const leftEdgePositions = [];
+
+    // Top edge (first half only due to symmetry)
+    const halfW = Math.floor(w / 2);
+    for (let i = 0; i < params.seedPointsPerSide; i++) {
+      const x = Math.floor((i * halfW) / params.seedPointsPerSide) + midThickness;
       const y = midThickness;
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        region.grid[x][y] = 1;
+      if (x >= 0 && x < halfW && y >= 0 && y < h) {
+        topEdgePositions.push({ x, y });
       }
     }
 
-    // Bottom edge: evenly spaced from left corner to right corner
-    for (let i = 0; i < seedCount; i++) {
-      const x =
-        Math.round((i * (w - 1 - 2 * midThickness)) / (seedCount - 1)) +
-        midThickness;
-      const y = h - midThickness - 1;
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        region.grid[x][y] = 1;
-      }
-    }
-
-    // Left edge: evenly spaced from top corner to bottom corner
-    // Skip i=0 and i=seedCount-1 to avoid re-placing corners
-    for (let i = 0; i < seedCount; i++) {
+    // Left edge (first half only due to symmetry)
+    const halfH = Math.floor(h / 2);
+    for (let i = 0; i < params.seedPointsPerSide; i++) {
       const x = midThickness;
-      const y =
-        Math.round((i * (h - 1 - 2 * midThickness)) / (seedCount - 1)) +
-        midThickness;
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        region.grid[x][y] = 1;
+      const y = Math.floor((i * halfH) / params.seedPointsPerSide) + midThickness;
+      if (x >= 0 && x < w && y >= 0 && y < halfH) {
+        leftEdgePositions.push({ x, y });
       }
     }
 
-    // Right edge: evenly spaced from top corner to bottom corner
-    // Skip i=0 and i=seedCount-1 to avoid re-placing corners
-    for (let i = 0; i < seedCount; i++) {
-      const x = w - midThickness - 1;
-      const y =
-        Math.round((i * (h - 1 - 2 * midThickness)) / (seedCount - 1)) +
-        midThickness;
-      if (x >= 0 && x < w && y >= 0 && y < h) {
-        region.grid[x][y] = 1;
-      }
+    // Place seeds with 4-way symmetry
+    for (let pos of topEdgePositions) {
+      // Top edge
+      region.grid[pos.x][pos.y] = 1;
+      region.grid[w - pos.x - 1][pos.y] = 1; // Mirror horizontally
+      // Bottom edge
+      region.grid[pos.x][h - pos.y - 1] = 1;
+      region.grid[w - pos.x - 1][h - pos.y - 1] = 1;
+    }
+
+    for (let pos of leftEdgePositions) {
+      // Left edge
+      region.grid[pos.x][pos.y] = 1;
+      region.grid[pos.x][h - pos.y - 1] = 1; // Mirror vertically
+      // Right edge
+      region.grid[w - pos.x - 1][pos.y] = 1;
+      region.grid[w - pos.x - 1][h - pos.y - 1] = 1;
     }
   }
 }
